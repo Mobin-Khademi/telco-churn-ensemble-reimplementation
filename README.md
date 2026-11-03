@@ -1,6 +1,6 @@
 # Telco Customer Churn: Leak-Free Reimplementation of a Multi-Model Ensemble Paper
 
-An independent reimplementation of the predictive pipeline described in *"Explainable AI-driven customer churn prediction: a multi-model ensemble approach with SHAP-based feature analysis"*, applied to the IBM Telco Customer Churn dataset (7,043 customers, 26.5% churn).
+An independent reimplementation of the predictive pipeline described in El Attar & El-Hajj (2026), *"Explainable AI-driven customer churn prediction: a multi-model ensemble approach with SHAP-based feature analysis"*, *Frontiers in Artificial Intelligence* 9:1748799 ([doi:10.3389/frai.2026.1748799](https://doi.org/10.3389/frai.2026.1748799)), applied to the IBM Telco Customer Churn dataset (7,043 customers, 26.5% churn).
 
 **Headline result:** on a held-out test set the soft-voting ensemble reaches an **F1 of 0.633 for the churn class** (95% bootstrap CI 0.592–0.670) and a **ROC-AUC of 0.844**. This does **not** reproduce the ≈ 0.84 F1 reported in the paper; see [Why the numbers differ from the paper](#why-the-numbers-differ-from-the-paper).
 
@@ -54,9 +54,14 @@ Soft-voting confusion matrix on the test set at threshold 0.34: 817 true negativ
 
 ## Why the numbers differ from the paper
 
-The paper reports F1 ≈ 0.84 for all models. This repository obtains ≈ 0.63 for the churn class (≈ 0.78 as a weighted-average F1).
+The paper (Table 7) reports accuracy, precision, recall and F1 of 0.84 for XGBoost, LightGBM, Gradient Boosting and the soft-voting ensemble, with ROC-AUC between 0.918 and 0.932. On a leak-free test set this repository obtains a churn-class F1 of ≈ 0.63, a weighted F1 of ≈ 0.78 and a ROC-AUC of ≈ 0.84.
 
-The first version of this notebook applied SMOTE before cross-validation. Synthetic neighbours of validation points leaked into training folds, giving a CV F1 of ≈ 0.86 while the test F1 was only ≈ 0.59. That inflated figure is close to the paper's scale, so a similar leak, or the use of a weighted-average F1, may explain the gap. This cannot be confirmed from the paper alone, and the original preprocessing details and tuned parameters are not available, so this is an approximation of the paper's method rather than an exact replica.
+What can and cannot be concluded:
+
+- **The paper's 0.84 is probably not a churn-class F1.** Accuracy, precision, recall and F1 all being 0.84 is the pattern produced by weighted-average metrics (weighted recall always equals accuracy). The comparable number here is the weighted F1 (≈ 0.78). The paper does not state which averaging it uses, so this is an inference.
+- **Averaging cannot explain the AUC gap.** ROC-AUC is threshold-free and not averaged over classes, yet the paper reports 0.93 (XGBoost) versus ≈ 0.84 here, and a Brier score of 0.106 versus ≈ 0.136 here. The evaluation therefore differs in some other way. The paper describes a leak-free protocol (SMOTE only on training folds), but it is not consistent about whether Table 7 comes from cross-validation or from the held-out test set (Sections 3.7.1 and 3.8.1 versus 4.3.1), so the cause cannot be identified from the text.
+- **Calibration.** The paper states that calibration was fitted on the SMOTE-balanced training set (Section 3.4.4.2). The first version of this notebook did the same and calibration made the Brier score worse. In the paper's own Table 8, isotonic calibration also raised the Brier score of XGBoost, LightGBM and Gradient Boosting (e.g. 0.106 → 0.110 for XGBoost). Here, calibrating on the real distribution improved the Brier score of all three models.
+- **How a protocol error can inflate scores.** The first version of this notebook applied SMOTE before cross-validation and obtained a CV F1 of ≈ 0.86 against a test F1 of ≈ 0.59. This shows how easily such a mistake yields numbers on the paper's scale; it is not a claim that the paper made it.
 
 Problems found in the first version and fixed here:
 
@@ -64,6 +69,21 @@ Problems found in the first version and fixed here:
 - Isotonic calibration fitted on SMOTE-balanced data: now fitted on the real distribution.
 - Decision threshold tuned on the test set: now tuned on training out-of-fold predictions.
 - LightGBM `bagging_fraction` had no effect without `bagging_freq`: `subsample_freq=1` is now fixed.
+
+## Differences from the paper's description
+
+This is an approximation of the paper's method, not an exact replica:
+
+| Aspect | Paper | This repository |
+|---|---|---|
+| Missing `TotalCharges` (11 rows) | median imputation | set to 0 (these customers have `tenure = 0`) |
+| `AvgMonthlyCharge` | `TotalCharges / (tenure + 1)` | `TotalCharges / tenure`, falling back to `MonthlyCharges` when `tenure = 0` |
+| `HasMultipleServices` | sum over service categories (defined as a count) | binary: more than one of 8 service columns (`InternetService` not counted) |
+| Contract | additionally encoded numerically (1 / 12 / 24) | one-hot only |
+| Scaling | `StandardScaler` | none (tree models are scale-invariant) |
+| Tuning | Optuna (objective stated as AUC in one place and F1 in another; best values not reported) | `RandomizedSearchCV`, 30 candidates, F1 |
+| Models | seven models plus autoencoder segmentation | only XGBoost, LightGBM, Gradient Boosting and their soft vote |
+| Library versions | scikit-learn 1.3.0, XGBoost 1.7.0, LightGBM 4.1.0 | see `requirements.txt` |
 
 ## Usage
 
@@ -90,7 +110,7 @@ Notes on the saved model:
 - Only one dataset; no external validation.
 - SHAP explains the XGBoost model, not the whole ensemble.
 
-## Reference
+## References
 
-Paper: *Explainable AI-driven customer churn prediction: a multi-model ensemble approach with SHAP-based feature analysis* (add authors, venue and link).
-Dataset: IBM Telco Customer Churn sample data (add source link).
+- El Attar, A., & El-Hajj, M. (2026). Explainable AI-driven customer churn prediction: a multi-model ensemble approach with SHAP-based feature analysis. *Frontiers in Artificial Intelligence*, 9, 1748799. https://doi.org/10.3389/frai.2026.1748799
+- IBM Telco Customer Churn dataset, as distributed on Kaggle: https://www.kaggle.com/datasets/blastchar/telco-customer-churn
